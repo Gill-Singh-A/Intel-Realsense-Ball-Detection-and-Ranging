@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
-import rospy, cv2, numpy, math
+import rospy, cv2, numpy, math, image_geometry
 from cv_bridge import CvBridge
+from sensor_msgs import point_cloud2
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import CameraInfo
 
 bridge = CvBridge()
+camera_model = image_geometry.PinholeCameraModel()
 
 sample_space = 5
 tolerence = 10
@@ -12,12 +16,16 @@ score_threshold = 0
 
 images = []
 center, radius = None, None
+cameraInfo = None
+depth = None
 
 def getImage(ros_image):
     images.append(cv2.cvtColor(bridge.imgmsg_to_cv2(ros_image), cv2.COLOR_RGB2BGR))
 def getDepthImage(ros_depth_image):
+    global depth
     depth_image = bridge.imgmsg_to_cv2(ros_depth_image, ros_depth_image.encoding)
     if center == None and radius == None:
+        depth = None
         return
     depths = []
     for x in range(center[0]-radius, center[0]+radius):
@@ -25,7 +33,16 @@ def getDepthImage(ros_depth_image):
             depths.append(depth_image[y][x])
     total_depth = sum(depths)
     total_depths = len(depths)
-    print(total_depth/total_depths)
+    depth = total_depth/total_depths
+def getPointCloud(point_cloud):
+    if (center == None and radius == None) or depth == None:
+        return
+    ray = numpy.array(camera_model.projectPixelTo3dRay(center))
+    point_3d = ray * depth
+    print(point_3d)
+def getCameraInfo(camera_info):
+    global cameraInfo
+    cameraInfo = camera_info
 
 def dist(c_1, c_2):
     return math.sqrt((c_1[0]-c_2[0])**2+(c_1[1]-c_2[1])**2)
@@ -78,6 +95,11 @@ if __name__ == "__main__":
     rate = rospy.Rate(10)
     image_subscriber = rospy.Subscriber("/camera/color/image_raw", Image, getImage)
     image_depth_subscriber = rospy.Subscriber("/camera/depth/image_rect_raw", Image, getDepthImage)
+    point_cloud_subscriber = rospy.Subscriber("/camera/depth/color/points", PointCloud2, getPointCloud)
+    camera_info_subscriber = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, getCameraInfo)
+    while cameraInfo == None:
+        rate.sleep()
+    camera_model.fromCameraInfo(cameraInfo)
     while not rospy.is_shutdown():
         if len(images) == sample_space:
             ball = detectBalls(images)
