@@ -6,9 +6,12 @@ from sensor_msgs import point_cloud2
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import CameraInfo
+from geometry_msgs.msg import Point
 
 bridge = CvBridge()
 camera_model = image_geometry.PinholeCameraModel()
+
+point_3d_publisher = rospy.Publisher("/ball_3d_point", Point, queue_size=10)
 
 sample_space = 5
 tolerence = 10
@@ -39,6 +42,11 @@ def getPointCloud(point_cloud):
         return
     ray = numpy.array(camera_model.projectPixelTo3dRay(center))
     point_3d = ray * depth
+    point_3d_ros_msg = Point()
+    point_3d_ros_msg.x = point_3d[0]
+    point_3d_ros_msg.y = point_3d[1]
+    point_3d_ros_msg.z = point_3d[2]
+    point_3d_publisher.publish(point_3d_ros_msg)
     print(point_3d)
 def getCameraInfo(camera_info):
     global cameraInfo
