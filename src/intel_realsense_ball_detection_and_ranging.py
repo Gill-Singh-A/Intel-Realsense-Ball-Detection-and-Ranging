@@ -15,7 +15,7 @@ point_3d_publisher = rospy.Publisher("/ball_3d_point", Point, queue_size=10)
 
 sample_space = 5
 tolerence = 10
-score_threshold = 0
+score_threshold = 1
 
 images = []
 center, radius = None, None
@@ -37,7 +37,8 @@ def getDepthImage(ros_depth_image):
     total_depth = sum(depths)
     total_depths = len(depths)
     depth = total_depth/total_depths
-def getPointCloud(point_cloud):
+    getPointCloud()
+def getPointCloud():
     if (center == None and radius == None) or depth == None:
         return
     ray = numpy.array(camera_model.projectPixelTo3dRay(center))
@@ -103,7 +104,6 @@ if __name__ == "__main__":
     rate = rospy.Rate(10)
     image_subscriber = rospy.Subscriber("/camera/color/image_raw", Image, getImage)
     image_depth_subscriber = rospy.Subscriber("/camera/depth/image_rect_raw", Image, getDepthImage)
-    point_cloud_subscriber = rospy.Subscriber("/camera/depth/color/points", PointCloud2, getPointCloud)
     camera_info_subscriber = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, getCameraInfo)
     while cameraInfo == None:
         rate.sleep()
