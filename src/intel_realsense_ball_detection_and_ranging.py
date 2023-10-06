@@ -14,8 +14,8 @@ camera_model = image_geometry.PinholeCameraModel()
 point_3d_publisher = rospy.Publisher("/ball_3d_point", Point, queue_size=10)
 
 sample_space = 5
-tolerence = 10
-score_threshold = 1
+tolerence = 5
+score_threshold = 0
 
 images = []
 center, radius = None, None
