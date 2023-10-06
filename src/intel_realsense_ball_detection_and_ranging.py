@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
-import rospy, cv2, numpy, math, image_geometry
+import rospy, cv2, numpy, math, image_geometry, statistics
 from cv_bridge import CvBridge
-from sensor_msgs import point_cloud2
 from sensor_msgs.msg import Image
-from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import CameraInfo
 from geometry_msgs.msg import Point
 
@@ -20,24 +18,17 @@ score_threshold = 0
 images = []
 center, radius = None, None
 cameraInfo = None
-depth = None
+depth_image = None
+depth, depths = None, []
+radius_range = 0.9
+bulge_tolerance = 20   # in mm
+radius = 75            # in mm
 
 def getImage(ros_image):
     images.append(cv2.cvtColor(bridge.imgmsg_to_cv2(ros_image), cv2.COLOR_RGB2BGR))
 def getDepthImage(ros_depth_image):
-    global depth
+    global depth, depths, depth_image
     depth_image = bridge.imgmsg_to_cv2(ros_depth_image, ros_depth_image.encoding)
-    if center == None and radius == None:
-        depth = None
-        return
-    depths = []
-    for x in range(center[0]-radius, center[0]+radius):
-        for y in range(center[1]-round(math.sqrt(radius**2-(center[0]-x)**2)), center[1]+round(math.sqrt(radius**2-(center[0]-x)**2))-1):
-            depths.append(depth_image[y][x])
-    total_depth = sum(depths)
-    total_depths = len(depths)
-    depth = total_depth/total_depths
-    getPointCloud()
 def getPointCloud():
     if (center == None and radius == None) or depth == None:
         return
@@ -55,7 +46,17 @@ def getCameraInfo(camera_info):
 
 def dist(c_1, c_2):
     return math.sqrt((c_1[0]-c_2[0])**2+(c_1[1]-c_2[1])**2)
-def detectBalls(frames):
+def getCircleDepth(ball):
+    global depth, depths
+    depths = []
+    center, radius = (ball[0], ball[1]), ball[2]
+    for x in range(center[0]-radius, center[0]+radius-1):
+        for y in range(center[1]-round(math.sqrt(radius**2-(center[0]-x)**2)), center[1]+round(math.sqrt(radius**2-(center[0]-x)**2))-1):
+            depths.append(depth_image[y][x])
+    total_depth = sum(depths)
+    total_depths = len(depths)
+    depth = total_depth/total_depths
+def detectCircles(frames):
     frames_circles = []
     for frame in frames:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -90,14 +91,20 @@ def detectBalls(frames):
         if index != None:
             score[index] += 1
     score = {j: score[j] for j in reversed(sorted(score, key=lambda i: score[i]))}
-    if len(score) > 0:
-        best_circle = list(score.keys())[0]
-        if score[best_circle] > score_threshold:
-            return reference_circles[best_circle]
-        else:
-            return None
-    else:
-        return None
+    return [score, reference_circles]
+def filterBall(balls):
+    for index, score in balls[0].items():
+        if score <= score_threshold:
+            continue
+        ball = balls[1][index]
+        getCircleDepth(ball)
+        new_depths = depths.copy()
+        new_depths.sort()
+        min_depth, max_depth = new_depths[round((1-radius_range)*len(new_depths))], new_depths[radius_range*len(new_depths)]
+        std_dev = statistics.stdev(depths)
+        bulge = max_depth - min_depth
+        if bulge > radius - std_dev - bulge_tolerance and bulge < radius + std_dev + bulge_tolerance:
+            return ball
 
 if __name__ == "__main__":
     rospy.init_node("intel_realsense_ball_detection_and_ranging")
@@ -110,7 +117,7 @@ if __name__ == "__main__":
     camera_model.fromCameraInfo(cameraInfo)
     while not rospy.is_shutdown():
         if len(images) == sample_space:
-            ball = detectBalls(images)
+            ball = detectCircles(images)
             if ball != None:
                 center, radius = (ball[0], ball[1]), ball[2]
                 cv2.circle(images[0], center, radius, (0, 255, 0), 2)
