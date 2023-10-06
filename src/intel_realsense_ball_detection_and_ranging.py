@@ -117,7 +117,7 @@ if __name__ == "__main__":
     camera_model.fromCameraInfo(cameraInfo)
     while not rospy.is_shutdown():
         if len(images) == sample_space:
-            ball = detectCircles(images)
+            ball = filterBall(detectCircles(images))
             if ball != None:
                 center, radius = (ball[0], ball[1]), ball[2]
                 cv2.circle(images[0], center, radius, (0, 255, 0), 2)
