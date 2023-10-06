@@ -97,11 +97,13 @@ def filterBall(balls):
         if score <= score_threshold:
             continue
         ball = balls[1][index]
+        center, radius = (ball[0], ball[1]), ball[2]
         getCircleDepth(ball)
         new_depths = depths.copy()
         new_depths.sort()
-        min_depth, max_depth = new_depths[round((1-radius_range)*len(new_depths))], new_depths[radius_range*len(new_depths)]
-        std_dev = statistics.stdev(depths)
+        min_depth, max_depth = new_depths[round((1-radius_range)*len(new_depths))], new_depths[round(radius_range*len(new_depths))]
+        # std_dev = statistics.stdev(depths)
+        std_dev = 0
         bulge = max_depth - min_depth
         if bulge > radius - std_dev - bulge_tolerance and bulge < radius + std_dev + bulge_tolerance:
             return ball
@@ -117,7 +119,11 @@ if __name__ == "__main__":
     camera_model.fromCameraInfo(cameraInfo)
     while not rospy.is_shutdown():
         if len(images) == sample_space:
-            ball = filterBall(detectCircles(images))
+            circles = detectCircles(images)
+            if circles != None:
+                ball = filterBall(circles)
+            else:
+                ball = None
             if ball != None:
                 center, radius = (ball[0], ball[1]), ball[2]
                 cv2.circle(images[0], center, radius, (0, 255, 0), 2)
