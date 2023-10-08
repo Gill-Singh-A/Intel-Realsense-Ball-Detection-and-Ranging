@@ -74,7 +74,7 @@ def detectCircles(frames):
                 frame_circles.append((x, y, r))
             frames_circles.append(frame_circles)
     if len(frames_circles) > 1:
-        reference_circles = frames_circles[1]
+        reference_circles = frames_circles[0]
     else:
         return None
     prev_min_dist, score = None, {i:0 for i in range(len(reference_circles))}
