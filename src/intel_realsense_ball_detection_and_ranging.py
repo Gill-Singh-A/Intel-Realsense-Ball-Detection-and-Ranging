@@ -19,8 +19,8 @@ depth_image = None
 
 WHITE = (255, 255, 255)
 
-radius = 7.5
-radius_tolerance = 5
+radius = 75
+radius_tolerance = 50
 
 def getImage(ros_image):
     global image
