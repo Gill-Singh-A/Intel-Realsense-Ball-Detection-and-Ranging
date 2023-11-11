@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import rospy, cv2, numpy, math, image_geometry, statistics
+import rospy, cv2, numpy, math, image_geometry
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
-from geometry_msgs.msg import Point
 from geometry_msgs.msg import Point32
 from geometry_msgs.msg import Polygon
 
@@ -17,14 +16,20 @@ cameraInfo = None
 image = None
 depth_image = None
 
+WHITE = (255, 255, 255)
+radius_lower_bound = 100
+
 def getImage(ros_image):
     global image
     image = cv2.cvtColor(bridge.imgmsg_to_cv2(ros_image), cv2.COLOR_RGB2BGR)
 def getDepthImage(ros_depth_image):
-    global depth
+    global depth_image
     depth_image = bridge.imgmsg_to_cv2(ros_depth_image, ros_depth_image.encoding)
 def getPointCloud(center, radius, index):
-    if (center == None and radius == None) or depth == None:
+    if (center == None and radius == None):
+        return
+    depth = getCircleDepth([center[0], center[1], radius])
+    if depth == None:
         return
     ray = numpy.array(camera_model.projectPixelTo3dRay(center))
     point_3d = ray * depth
@@ -32,7 +37,7 @@ def getPointCloud(center, radius, index):
     point_3d_ros_msg.x = point_3d[0]
     point_3d_ros_msg.y = point_3d[1]
     point_3d_ros_msg.z = point_3d[2]
-    print(index, point_3d)
+    print(f"{index} => {point_3d}")
     return point_3d_ros_msg
 def getCameraInfo(camera_info):
     global cameraInfo
@@ -44,17 +49,22 @@ def getCircleDepth(ball):
     global depth, depths
     depths = []
     center, radius = (ball[0], ball[1]), ball[2]
-    for x in range(center[0]-radius, center[0]+radius-1):
-        for y in range(center[1]-round(math.sqrt(radius**2-(center[0]-x)**2)), center[1]+round(math.sqrt(radius**2-(center[0]-x)**2))-1):
-            depths.append(depth_image[y][x])
+    try:
+        for x in range(center[0]-radius, center[0]+radius-1):
+            for y in range(center[1]-round(math.sqrt(radius**2-(center[0]-x)**2)), center[1]+round(math.sqrt(radius**2-(center[0]-x)**2))-1):
+                depths.append(depth_image[y][x])
+    except:
+        return
     total_depth = sum(depths)
     total_depths = len(depths)
     depth = total_depth/total_depths
+    return depth
 
 def get_masked_image():
-    if image == None:
+    try:
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    except:
         return
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     yellowLower = (30, 50, 50)
     yellowUpper = (60, 255, 255)
     mask = cv2.inRange(hsv, yellowLower, yellowUpper)
@@ -73,13 +83,16 @@ def draw_ball_contours(rgb_img, contours):
     for index, c in enumerate(contours):
         area = cv2.contourArea(c)
         ((x,y), radius) = cv2.minEnclosingCircle(c)
-        if (area > 5000):
-            cv2.drawContours(rgb_img, [c], -1, (255,0,255), 2)
+        if (area > radius_lower_bound):
             cx, cy = get_contour_center(c)
-            cv2.circle(rgb_img, (cx,cy), (int)(radius), (0,255,255), 3)
-            cv2.circle(black_img, (cx,cy), (int)(radius), (0,255,255), 3)
-            cv2.circle(black_img, (cx,cy), 5, (150,0,255), -1)
-            ros_publisher_points.points.append(getPointCloud((cx,cy),  (int)(radius), index))
+            point = getPointCloud((cx,cy),  (int)(radius), index)
+            if point != None:
+                ros_publisher_points.points.append(point)
+                cv2.drawContours(rgb_img, [c], -1, (255,0,255), 2)
+                cv2.circle(rgb_img, (cx,cy), (int)(radius), (0,255,255), 3)
+                cv2.circle(black_img, (cx,cy), (int)(radius), (0,255,255), 3)
+                cv2.circle(black_img, (cx,cy), 5, (150,0,255), -1)
+                cv2.putText(image, f"({point.x:.2f},{point.y:.2f},{point.z:.2f})mm", (cx, cy), cv2.FONT_HERSHEY_COMPLEX, 1, WHITE, 2)
     point_3d_publisher.publish(ros_publisher_points)
 
 if __name__ == "__main__":
@@ -91,9 +104,12 @@ if __name__ == "__main__":
     while cameraInfo == None:
         rate.sleep()
     camera_model.fromCameraInfo(cameraInfo)
-    while not rospy.is_shutdown():
-        mask = get_masked_image()
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    while not rospy.is_shutdown() and cv2.waitKey(1) != ord('q'):
+        try:
+            mask = get_masked_image()
+            contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        except:
+            continue
         draw_ball_contours(image, contours)
         cv2.imshow("Ball Tracking", image)
         cv2.imshow("Mask", mask)
