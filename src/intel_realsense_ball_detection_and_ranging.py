@@ -17,10 +17,9 @@ cameraInfo = None
 image = None
 depth_image = None
 
-WHITE = (255, 255, 255)
+ball_area_lower_bound = 1000
 
-radius = 75
-radius_tolerance = 50
+WHITE = (255, 255, 255)
 
 def getImage(ros_image):
     global image
@@ -33,7 +32,7 @@ def getPointCloud(center, radius, index):
         return
     depth = getCircleDepth([center[0], center[1], radius])
     if depth == None:
-        return None, None
+        return
     ray = numpy.array(camera_model.projectPixelTo3dRay(center))
     point_3d = ray * depth
     point_3d_ros_msg = Point32()
@@ -41,7 +40,7 @@ def getPointCloud(center, radius, index):
     point_3d_ros_msg.y = point_3d[1]
     point_3d_ros_msg.z = point_3d[2]
     print(f"{index} => {point_3d}")
-    return point_3d_ros_msg, depth
+    return point_3d_ros_msg
 def getCameraInfo(camera_info):
     global cameraInfo
     cameraInfo = camera_info
@@ -60,6 +59,8 @@ def getCircleDepth(ball):
         return
     total_depth = sum(depths)
     total_depths = len(depths)
+    if total_depths == 0:
+        return
     depth = total_depth/total_depths
     return depth
 
@@ -87,28 +88,14 @@ def draw_ball_contours(rgb_img, contours):
         area = cv2.contourArea(c)
         ((x,y), radius) = cv2.minEnclosingCircle(c)
         cx, cy = get_contour_center(c)
-        point, depth = getPointCloud((cx,cy),  (int)(radius), index)
-        if point == None:
-            continue
-        d = (1+math.pow(((height-2*cy)/(width-2*cx)), 2))*(math.pow(cx, 2)+math.pow(cy, 2)-math.pow(radius, 2))
-        if d < 0:
-            continue
-        upper_point_x = ((cx-((height-2*cy)/(width-2*cx))*cy) + d)/(1 + math.pow(((height-2*cy)/(width-2*cx)), 2))
-        lower_point_x = ((cx-((height-2*cy)/(width-2*cx))*cy) - d)/(1 + math.pow(((height-2*cy)/(width-2*cx)), 2))
-        upper_point_y = ((height-2*cy)/(width-2*cx))*upper_point_x
-        lower_point_y = ((height-2*cy)/(width-2*cx))*lower_point_x
-        upper_ray = numpy.array(camera_model.projectPixelTo3dRay((upper_point_x, upper_point_y)))
-        lower_ray = numpy.array(camera_model.projectPixelTo3dRay((lower_point_x, lower_point_y)))
-        theta = numpy.sum(upper_ray*lower_ray)/(2*numpy.linalg.norm(upper_ray)*numpy.linalg.norm(lower_ray))
-        calculated_radius = depth * math.sin(theta)
-        if not (calculated_radius > radius-radius_tolerance and calculated_radius < radius-radius_tolerance):
-            continue
-        ros_publisher_points.points.append(point)
-        cv2.drawContours(rgb_img, [c], -1, (255,0,255), 2)
-        cv2.circle(rgb_img, (cx,cy), (int)(radius), (0,255,255), 3)
-        cv2.circle(black_img, (cx,cy), (int)(radius), (0,255,255), 3)
-        cv2.circle(black_img, (cx,cy), 5, (150,0,255), -1)
-        cv2.putText(image, f"({point.x:.2f},{point.y:.2f},{point.z:.2f})mm", (cx, cy), cv2.FONT_HERSHEY_COMPLEX, 1, WHITE, 2)
+        point = getPointCloud((cx,cy),  (int)(radius), index)
+        if area > ball_area_lower_bound and point != None:
+            ros_publisher_points.points.append(point)
+            cv2.drawContours(rgb_img, [c], -1, (255,0,255), 2)
+            cv2.circle(rgb_img, (cx,cy), (int)(radius), (0,255,255), 3)
+            cv2.circle(black_img, (cx,cy), (int)(radius), (0,255,255), 3)
+            cv2.circle(black_img, (cx,cy), 5, (150,0,255), -1)
+            cv2.putText(image, f"({point.x:.2f},{point.y:.2f},{point.z:.2f})mm", (cx, cy), cv2.FONT_HERSHEY_COMPLEX, 1, WHITE, 2)
     point_3d_publisher.publish(ros_publisher_points)
 
 if __name__ == "__main__":
